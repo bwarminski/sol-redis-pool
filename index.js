@@ -12,7 +12,8 @@ try {
 }
 
 if (Promise != null) {
-  redis = Promise.promisifyAll(redis);
+  Promise.promisifyAll(redis.RedisClient.prototype);
+  Promise.promisifyAll(redis.Multi.prototype);
 }
 
 var SUPPORTED_REDIS_OPTIONS = [
