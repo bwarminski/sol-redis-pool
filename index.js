@@ -2,7 +2,18 @@ var redis = require('redis');
 var util = require('util');
 var EventEmitter = require('events').EventEmitter;
 var Pool = require('generic-pool').Pool;
+var Promise = null;
+try {
+  Promise = require('bluebird');
+} catch (err) {
+  if (err.code !== "MODULE_NOT_FOUND") {
+    throw err;
+  }
+}
 
+if (Promise != null) {
+  redis = Promise.promisifyAll(redis);
+}
 
 var SUPPORTED_REDIS_OPTIONS = [
   'parser', 'return_buffers', 'detect_buffers', 'socket_nodelay',
@@ -101,6 +112,25 @@ RedisPool.prototype.acquire = function(cb, priority) {
   this._pool.acquire(cb, priority);
 };
 
+if (Promise !== null) {
+// Acquire a database connection promise
+  RedisPool.prototype.acquireAsync = function(priority) {
+    var self = this;
+    return Promise.fromCallback(function(cb) {
+      self.acquire(cb, priority);
+    });
+  };
+
+// Acquire a database connection disposer (for Promise.using())
+  RedisPool.prototype.acquireResource = function(priority) {
+    var self = this;
+    return this.acquireAsync(priority).disposer(function(connection, promise) {
+      self.release(connection);
+    });
+  };
+
+}
+
 RedisPool.prototype.acquireDb = function(cb, db, priority) {
   this._pool.acquire(function(err, client) {
     if (!err && client._db_selected !== db) {
@@ -111,6 +141,22 @@ RedisPool.prototype.acquireDb = function(cb, db, priority) {
   }, priority);
 };
 
+if (Promise !== null) {
+
+  RedisPool.prototype.acquireDbAsync = function(db, priority) {
+    var self = this;
+    return Promise.fromCallback(function(cb) {
+      self.acquireDb(cb, db, priority);
+    })
+  };
+
+  RedisPool.prototype.acquireDbResource = function(db,priority) {
+    var self = this;
+    self.acquireDbAsync(db, priority).disposer(function(connection, promise) {
+      self.release(connection);
+    });
+  }
+}
 // Release a database connection to the pool.
 RedisPool.prototype.release = function(client) {
   var self = this;
@@ -132,6 +178,15 @@ RedisPool.prototype.drain = function(cb) {
     }
   });
 };
+
+if (Promise !== null) {
+  RedisPool.prototype.drainAsync = function() {
+    var self = this;
+    return Promise.fromCallback(function(cb) {
+      self.drain(cb);
+    });
+  };
+}
 
 // Returns factory.name for this pool
 RedisPool.prototype.getName = function() {
